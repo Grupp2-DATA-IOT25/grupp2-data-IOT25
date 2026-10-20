@@ -1,0 +1,7 @@
+[
+  {
+    "name": "Alexander",
+    "device_id": "alexander-esp32",
+    "endpoint": "opc.tcp://192.168.1.50:4840/telemetry/"
+  }
+]
