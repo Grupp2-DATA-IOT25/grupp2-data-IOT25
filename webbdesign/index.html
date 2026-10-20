@@ -1,0 +1,80 @@
+﻿<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Dashboard</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="logo">◈ IoT Dashboard</div>
+        <nav>
+            <a href="#" class="nav-link active">⌂ Översikt</a>
+            <a href="#enheter" class="nav-link">▣ Enheter</a>
+            <a href="#status" class="nav-link">◉ Status</a>
+        </nav>
+        <div class="sidebar-status">
+            <span class="status-dot"></span>
+            <strong>IoT-övervakning</strong>
+            <p id="data-status">Väntar på data...</p>
+        </div>
+    </aside>
+    <main class="main-content">
+        <header class="topbar">
+            <span>Gruppens IoT-system</span>
+            <span class="connection">
+                <span class="status-dot"></span>
+                Live-läge
+            </span>
+        </header>
+        <section class="page-heading">
+            <div>
+                <h1>Dashboard</h1>
+                <p>Övervaka era IoT-enheter på ett ställe.</p>
+            </div>
+            <span class="date-label">OPC UA · Sensoröversikt</span>
+        </section>
+        <section class="summary-grid">
+            <article class="summary-card">
+                <div class="icon-circle orange">🌡️</div>
+                <div>
+                    <p>Medeltemperatur</p>
+                    <h2 id="avg-temp">-- °C</h2>
+                    <span id="temp-device-count">0 enheter</span>
+                </div>
+            </article>
+            <article class="summary-card">
+                <div class="icon-circle blue">💧</div>
+                <div>
+                    <p>Medelluftfuktighet</p>
+                    <h2 id="avg-humidity">-- %</h2>
+                    <span id="humidity-device-count">0 enheter</span>
+                </div>
+            </article>
+            <article class="summary-card">
+                <div class="icon-circle green">✓</div>
+                <div>
+                    <p>Registrerade enheter</p>
+                    <h2 id="total-devices">0</h2>
+                    <span>Antal aktiva OPC UA-servrar</span>
+                </div>
+            </article>
+        </section>
+        <section id="enheter" class="devices-section">
+            <div class="section-heading">
+                <div>
+                    <h2>Era enheter</h2>
+                    <p>Senaste mätvärden från ESP32 via OPC UA</p>
+                </div>
+                <span class="device-count" id="active-device-count">0 enheter</span>
+            </div>
+            <div id="sensor-list" class="device-grid"></div>
+        </section>
+        <footer id="status">
+            IoT Dashboard · Skapad med HTML, CSS och JavaScript
+        </footer>
+    </main>
+    <script src="static/script.js"></script>
+</body>
+</html>
