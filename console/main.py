@@ -1,4 +1,11 @@
+import argparse
+import asyncio
+import math
+import sys
 from datetime import datetime
+from pathlib import Path
+
+from server_config import ConfigError, load_servers
 
 
 def render(devices: list[dict]) -> str:
@@ -14,6 +21,7 @@ def render(devices: list[dict]) -> str:
         "online": "Active",
         "active": "Active",
         "offline": "Offline",
+        "connecting": "Connecting",
     }
 
     header = " | ".join(label.ljust(width) for _, label, width in columns)
@@ -24,7 +32,7 @@ def render(devices: list[dict]) -> str:
         timestamp = device.get("updated_at")
         status = device.get("status")
 
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
             value_text = f"{value:.1f}"
         else:
             value_text = "-"
@@ -65,3 +73,24 @@ def render(devices: list[dict]) -> str:
         lines.append("\n* Stale reading. Status indicates the connection to the OPC UA server.")
 
     return "\n".join(lines)
+
+
+def build_rows(entries, states, last_reads):
+    """Anpassa watch() till panelen. Två rader per server."""
+    rows = []
+    for entry in entries:
+        name = entry["name"]
+        data = states.get(name)
+        connected = data is not None and "error" not in data
+
+        # watch() lägger in en ny dictionary vid varje lyckad läsning.
+        # Tiden är när klienten observerade läsningen, inte sensorns mättid.
+        if connected:
+            previous = last_reads.get(name)
+            if previous is None or previous[0] is not data:
+                last_reads[name] = (data, datetime.now().astimezone())
+
+        timestamp = last_reads[name][1] if name in last_reads else None
+        status = "online" if connected else ("connecting" if data is None else "offline")
+
+        for field, unit in (("Temperature", "C"), ("Humidity", "%")):
