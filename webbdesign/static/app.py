@@ -6,8 +6,8 @@ app = Flask(__name__, static_folder="static")
 @app.route("/")
 def index():
     return send_from_directory(".", "index.html")
-
-@app.route("/api/servers")
+# Det här kan köras vid test!  kör annars app.route"api/servers/ GET (som finns i opcclient_web app.py)    
+@app.route("/api/test/servers/")
 def servers():
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return jsonify({

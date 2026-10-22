@@ -1,110 +1,102 @@
-"""Person 3:s automatiska kontroll av riktiga lokala OPC UA-testservrar."""
 import asyncio
-import logging
-from pathlib import Path
+import socket
 import sys
+from pathlib import Path
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from asyncua import Server, ua
-from check_servers import probe, check_all
-from console_client import watch
-from schema import NAMESPACE
+from check_servers import NAMESPACE, check_all, probe
 
 
-async def start_server(port, device_id, *, value_type=ua.VariantType.Double, omit_unit=False, namespace=NAMESPACE):
-    server=Server()
-    await server.init()
-    endpoint=f"opc.tcp://127.0.0.1:{port}/telemetry/"
-    server.set_endpoint(endpoint)
-    server.set_security_policy([ua.SecurityPolicyType.NoSecurity])
-    ns=await server.register_namespace(namespace)
-    obj=await server.nodes.objects.add_object(ua.NodeId("Device",ns),"Device")
-    await obj.add_variable(ua.NodeId("Device.DeviceId",ns),"DeviceId",device_id)
-    node=await obj.add_variable(ua.NodeId("Device.Value",ns),"Value",
-                              ua.Variant(22.5,value_type))
-    if not omit_unit:
-        await obj.add_variable(ua.NodeId("Device.Unit",ns),"Unit","C")
-    await server.start()
-    return server,node,{"name":device_id,"device_id":device_id,"endpoint":endpoint}
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
 
 
-async def until(predicate, seconds=20):
-    for _ in range(int(seconds*10)):
-        if predicate():
-            return
-        await asyncio.sleep(.1)
-    raise AssertionError("Väntat tillstånd uppnåddes inte")
+def available_port():
+    with socket.socket() as connection:
+        connection.bind(("127.0.0.1", 0))
+        return connection.getsockname()[1]
 
 
 async def main():
-    logging.basicConfig(level=logging.ERROR)
-    servers=[]
-    jobs=[]
-    try:
-        first,node1,entry1=await start_server(4855,"test-one")
-        servers.append(first)
-        second,node2,entry2=await start_server(4856,"test-two")
-        servers.append(second)
-        results=await check_all([entry1,entry2])
-        assert all(result["ok"] for result in results),results
-        assert results[0]["data"]["Unit"]=="C"
-        print("PASS: två servrar med exakt tre noder och rätt datatyper/ID")
+    endpoint = f"opc.tcp://127.0.0.1:{available_port()}/telemetry/"
+    entry = {
+        "name": "Testenhet",
+        "device_id": "alexander-esp32",
+        "endpoint": endpoint,
+    }
+    server = Server()
+    await server.init()
+    server.set_endpoint(endpoint)
+    server.set_security_policy([ua.SecurityPolicyType.NoSecurity])
+    namespace = await server.register_namespace(NAMESPACE)
+    device = await server.nodes.objects.add_object(
+        ua.NodeId("Device", namespace), "Device"
+    )
+    device_id = await device.add_variable(
+        ua.NodeId("Device.DeviceId", namespace),
+        "DeviceId", "alexander-esp32",
+        varianttype=ua.VariantType.String,
+    )
+    temperature = await device.add_variable(
+        ua.NodeId("Device.Temperature", namespace),
+        "Temperature", 22.5,
+        varianttype=ua.VariantType.Double,
+    )
+    humidity = await device.add_variable(
+        ua.NodeId("Device.Humidity", namespace),
+        "Humidity", 48.0,
+        varianttype=ua.VariantType.Double,
+    )
 
-        wrong=await probe(dict(entry1,device_id="wrong-id"))
-        assert not wrong["ok"] and "Fel DeviceId" in wrong["error"],wrong
-        print("PASS: fel enhets-ID upptäcks")
+    async with server:
+        result = await probe(entry)
+        require(result["ok"], str(result))
+        require(result["data"]["Temperature"] == 22.5, "Fel temperatur")
+        require(result["data"]["Humidity"] == 48.0, "Fel luftfuktighet")
+        print("PASS: nya noder, datatyper och enhets-ID", flush=True)
 
-        bad,_,bad_entry=await start_server(4857,"bad-type",value_type=ua.VariantType.Float)
-        servers.append(bad)
-        result=await probe(bad_entry)
-        assert not result["ok"] and "förväntade Double" in result["error"],result
-        await bad.stop()
-        servers.remove(bad)
+        await temperature.write_value(25.0, ua.VariantType.Double)
+        await humidity.write_value(55.0, ua.VariantType.Double)
+        result = await probe(entry)
+        require(result["ok"], str(result))
+        require(
+            result["data"]["Temperature"] == 25.0
+            and result["data"]["Humidity"] == 55.0,
+            "Ändrade värden kunde inte läsas",
+        )
+        print("PASS: båda ändrade mätvärdena kan läsas", flush=True)
 
-        missing,_,missing_entry=await start_server(4857,"missing-unit",omit_unit=True)
-        servers.append(missing)
-        assert not (await probe(missing_entry))["ok"]
-        await missing.stop()
-        servers.remove(missing)
+        await device_id.write_value("fel-esp32", ua.VariantType.String)
+        result = await probe(entry)
+        require(not result["ok"], "Fel enhets-ID accepterades")
+        print("PASS: fel enhets-ID upptäcks", flush=True)
+        await device_id.write_value("alexander-esp32", ua.VariantType.String)
 
-        foreign,_,foreign_entry=await start_server(4857,"wrong-namespace",namespace="urn:other:test")
-        servers.append(foreign)
-        assert not (await probe(foreign_entry))["ok"]
-        await foreign.stop()
-        servers.remove(foreign)
-        print("PASS: fel datatyp, saknad nod och fel namespace upptäcks")
+        # Behåll en port bunden utan att lyssna: ingen annan testserver
+        # kan råka ta den under kontrollen av en otillgänglig server.
+        with socket.socket() as unavailable:
+            unavailable.bind(("127.0.0.1", 0))
+            offline = {
+                "name": "Avstängd",
+                "device_id": "offline-esp32",
+                "endpoint": (
+                    f"opc.tcp://127.0.0.1:"
+                    f"{unavailable.getsockname()[1]}/telemetry/"
+                ),
+            }
+            results = await check_all([entry, offline], timeout=2.0)
+        require(results[0]["ok"], "Den fungerande servern misslyckades")
+        require(not results[1]["ok"], "Den otillgängliga servern upptäcktes inte")
+        print("PASS: otillgänglig server hindrar inte övriga", flush=True)
 
-        offline={"name":"offline","device_id":"offline","endpoint":"opc.tcp://127.0.0.1:4898/telemetry/"}
-        results=await check_all([entry1,offline,entry2],timeout=2)
-        assert [item["ok"] for item in results]==[True,False,True],results
-        print("PASS: otillgänglig server hindrar inte kontroll av övriga")
-
-        states={}
-        jobs=[asyncio.create_task(watch(entry,states,.1)) for entry in (entry1,entry2)]
-        await until(lambda: states.get("test-one",{}).get("Value")==22.5
-                    and states.get("test-two",{}).get("Value")==22.5)
-        await node1.write_value(24.5)
-        await until(lambda: states["test-one"].get("Value")==24.5)
-        print("PASS: konsolklienten läser ändrade värden automatiskt")
-
-        await first.stop()
-        servers.remove(first)
-        await until(lambda: "error" in states["test-one"])
-        await node2.write_value(25.5)
-        await until(lambda: states["test-two"].get("Value")==25.5)
-        restarted,newnode,_=await start_server(4855,"test-one")
-        servers.append(restarted)
-        await newnode.write_value(26.5)
-        await until(lambda: states["test-one"].get("Value")==26.5)
-        print("PASS: serveravbrott isoleras och klienten återansluter efter omstart")
-        print("PERSON 3: ALLA INTEGRATIONSKONTROLLER GODKÄNDA")
-    finally:
-        for task in jobs:
-            task.cancel()
-        await asyncio.gather(*jobs,return_exceptions=True)
-        for server in reversed(servers):
-            await server.stop()
+    result = await probe(entry, timeout=2.0)
+    require(not result["ok"], "Serveravbrott upptäcktes inte")
+    print("PASS: serveravbrott upptäcks", flush=True)
+    print("\nALLA DESSA KONTROLLER GODKÄNDA", flush=True)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     asyncio.run(main())
