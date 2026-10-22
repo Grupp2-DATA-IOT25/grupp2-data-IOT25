@@ -1,86 +1,98 @@
-﻿const DEMO_SENSORS = [
-    { serverKey: "server1", device: { id: "01", name: "ESP32-1" }, temperature: 23.6, humidity: 48, connected: true, lastUpdate: null },
-    { serverKey: "server2", device: { id: "02", name: "ESP32-2" }, temperature: 21.9, humidity: 46, connected: true, lastUpdate: null },
-    { serverKey: "server3", device: { id: "03", name: "ESP32-3" }, temperature: 24.1, humidity: 49, connected: true, lastUpdate: null }
-];
+const API_URL = CONFIG.apiUrls[CONFIG.environment];
+let updating = false;
 
-let lastJson = "";
+function safeText(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[character]);
+}
 
-document.addEventListener("DOMContentLoaded", () => { 
-    updateSensors(); 
-    setInterval(updateSensors, 2000); 
-});
+function showNumber(value, digits = 1) {
+    return typeof value === "number" && Number.isFinite(value)
+        ? value.toFixed(digits) : "--";
+}
+
+function renderSensors(sensors) {
+    const online = sensors.filter(sensor => sensor.connected);
+    const temperatures = online.map(sensor => sensor.temperature).filter(Number.isFinite);
+    const humidities = online.map(sensor => sensor.humidity).filter(Number.isFinite);
+
+    const average = (values, digits, unit) => values.length
+        ? `${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(digits)} ${unit}`
+        : `-- ${unit}`;
+
+    document.getElementById("avg-temp").textContent = average(temperatures, 1, "°C");
+    document.getElementById("avg-humidity").textContent = average(humidities, 0, "%");
+    document.getElementById("total-devices").textContent = online.length;
+    document.getElementById("active-device-count").textContent = `${online.length} aktiva av ${sensors.length}`;
+    document.getElementById("temp-device-count").textContent = `${temperatures.length} enheter`;
+    document.getElementById("humidity-device-count").textContent = `${humidities.length} enheter`;
+
+    document.getElementById("sensor-list").innerHTML = sensors.map(sensor => {
+        const status = sensor.connected ? "Online" : "Offline";
+        const color = sensor.connected ? "#10b981" : "#ef4444";
+        const temperature = sensor.connected ? showNumber(sensor.temperature) : "--";
+        const humidity = sensor.connected ? showNumber(sensor.humidity) : "--";
+        return `
+            <article class="device-card">
+                <div class="device-header">
+                    <div>
+                        <span class="device-id">${safeText(sensor.serverKey)}</span>
+                        <h3>${safeText(sensor.name)}</h3>
+                    </div>
+                    <span class="online" style="color:${color}">
+                        <span class="status-dot" style="background:${color}"></span>${status}
+                    </span>
+                </div>
+                <div class="metric"><span>🌡️ Temperatur</span><strong>${temperature} <small>°C</small></strong></div>
+                <div class="metric"><span>💧 Luftfuktighet</span><strong>${humidity} <small>%</small></strong></div>
+                <div class="device-footer">Senast: ${safeText(sensor.lastUpdate || "Ingen uppdatering")}</div>
+            </article>`;
+    }).join("");
+}
 
 async function updateSensors() {
-    const info = document.getElementById("data-status");
-    let sensors = []; 
-    let isLive = false;
+    if (updating) return;
+    updating = true;
+    const status = document.getElementById("data-status");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
 
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch("/api/servers", { signal: controller.signal });
-        clearTimeout(timeout);
-
-        if (!response.ok) throw new Error("Backend svarade inte");
+        const response = await fetch(API_URL, { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const result = await response.json();
+        if (!result || typeof result !== "object" || Array.isArray(result)) {
+            throw new Error("Felaktigt format från API");
+        }
 
-        sensors = Object.entries(result).map(([serverKey, server]) => {
+        const sensors = Object.entries(result).map(([serverKey, server]) => {
             const data = server && server.Data ? server.Data : {};
-            return { 
-                serverKey, 
-                device: { id: serverKey.replace("server", ""), name: data.DeviceId || serverKey }, 
-                temperature: typeof data.Temperature === "number" ? data.Temperature : null, 
-                humidity: typeof data.Humidity === "number" ? data.Humidity : null, 
-                connected: server.connected === true, 
-                lastUpdate: server.last_update || null 
+            return {
+                serverKey,
+                name: data.DeviceId || serverKey,
+                temperature: typeof data.Temperature === "number" ? data.Temperature : null,
+                humidity: typeof data.Humidity === "number" ? data.Humidity : null,
+                connected: server?.connected === true,
+                lastUpdate: server?.last_update || null
             };
         });
 
-        isLive = true; 
-        info.textContent = `Live-data synkad ${new Date().toLocaleTimeString()}`; 
-        info.style.color = "#cbd5e1";
+        renderSensors(sensors);
+        status.textContent = CONFIG.environment === "test" ? "Testdata hämtad" : "API-data hämtad";
+        status.style.color = "#cbd5e1";
     } catch (error) {
-        sensors = DEMO_SENSORS; 
-        info.textContent = "Exempeldata visas (backend ej nådd)"; 
-        info.style.color = "#fbbf24";
+        status.textContent = "Kunde inte hämta data från API:et";
+        status.style.color = "#fbbf24";
+        renderSensors([]);
+        console.error("Fel vid hämtning:", error);
+    } finally {
+        clearTimeout(timeout);
+        updating = false;
     }
-
-    const json = JSON.stringify(sensors);
-    if (json === lastJson && isLive) return; 
-    lastJson = json;
-
-    const temps = sensors.map(s => s.temperature).filter(v => typeof v === "number");
-    const hums  = sensors.map(s => s.humidity).filter(v => typeof v === "number");
-
-    document.getElementById("avg-temp").textContent = temps.length ? `${(temps.reduce((a,b)=>a+b,0)/temps.length).toFixed(1)} °C` : "-- °C";
-    document.getElementById("avg-humidity").textContent = hums.length ? `${(hums.reduce((a,b)=>a+b,0)/hums.length).toFixed(0)} %` : "-- %";
-    document.getElementById("total-devices").textContent = sensors.length;
-    document.getElementById("active-device-count").textContent = `${sensors.length} enheter`;
-    document.getElementById("temp-device-count").textContent = `${temps.length} enheter`;
-    document.getElementById("humidity-device-count").textContent = `${hums.length} enheter`;
-
-    document.getElementById("sensor-list").innerHTML = sensors.map(s => `
-        <article class="device-card">
-            <div class="device-header">
-                <div>
-                    <span class="device-id">SERVER ${s.device.id?.toUpperCase() ?? ""}</span>
-                    <h3>${s.device.name}</h3>
-                </div>
-                <span class="online">
-                    <span class="status-dot" style="background:${s.connected === false ? '#ef4444' : '#10b981'}"></span>
-                    ${s.connected === false ? "Offline" : "Live"}
-                </span>
-            </div>
-            <div class="metric">
-                <span>🌡️ Temperatur</span>
-                <strong>${s.temperature ?? "—"} <small>°C</small></strong>
-            </div>
-            <div class="metric">
-                <span>💧 Luftfuktighet</span>
-                <strong>${s.humidity ?? "—"} <small>%</small></strong>
-            </div>
-            <div class="device-footer">Senast: ${s.lastUpdate ?? "—"}</div>
-        </article>
-    `).join("");
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+    updateSensors();
+    setInterval(updateSensors, 2000);
+});
