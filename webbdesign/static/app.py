@@ -56,7 +56,7 @@ def servers():
 def real_servers():
     try:
         with urllib.request.urlopen(
-            "http://127.0.0.1:5001/api/servers",
+            "http://127.0.0.1:5000/api/servers",
             timeout=3
         ) as response:
             data = response.read()
