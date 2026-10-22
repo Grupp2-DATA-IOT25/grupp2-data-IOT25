@@ -92,6 +92,7 @@ def update_node_value(server_name, node_name, value):
         server_data = latest_values[server_name]
 
         server_data["Data"][node_name] = value
+        server_data["last_update"] = utc_now()
        
 
 # --------------------------------------------------
