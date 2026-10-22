@@ -9,7 +9,7 @@ import threading
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify
-from asyncua import Client
+from asyncua import Client, ua
 
 
 # --------------------------------------------------
@@ -43,9 +43,9 @@ SERVER_URLS = {
 
 # Local name: actual OPC UA NodeId
 NODES = {
-    "DeviceId": "ns=2;s=Device.DeviceId",
-    "Temperature": "ns=2;s=Device.Value",
-    "Humidity": "ns=2;s=Device.Unit",
+    "DeviceId": "Device.DeviceId",
+    "Temperature": "Device.Temperature",
+    "Humidity": "Device.Humidity",
 }
 
 
@@ -217,11 +217,14 @@ async def read_server(server_name, server_url):
         # because the connection is temporarily interrupted.
 
         try:
+           namespace = await client.get_namespace_index(
+               "urn:nackademin:group2:telemetry"
+           )
 
-            nodes = {
-                name: client.get_node(node_id)
-                for name, node_id in NODES.items()
-            }
+           nodes = {
+               name: client.get_node(ua.NodeId(node_id, namespace))
+               for name, node_id in NODES.items()
+           }
 
             # --------------------------------------------------
             # 3. READ INITIAL VALUES
