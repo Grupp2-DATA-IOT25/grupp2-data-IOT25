@@ -1,1 +1,3 @@
 asyncua==1.1.8
+
+requirements.txt listar Python-paketen som konsoldelen behöver. Kör python -m pip install -r requirements.txt för att installera dem.
