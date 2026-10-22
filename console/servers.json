@@ -13,5 +13,10 @@
     "name": "Queenie",
     "device_id": "queenie-esp32",
     "endpoint": "opc.tcp://172.20.10.3:4840/"
+  },
+  {
+    "name": "Mattias",
+    "device_id": "mattias-esp32",
+    "endpoint": "opc.tcp://100.67.67.79:4840/telemetry-server"
   }
 ]
