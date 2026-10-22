@@ -215,15 +215,14 @@ async def read_server(server_name, server_url):
         # because the connection is temporarily interrupted.
 
         try:
-           namespace = await client.get_namespace_index(
-               "urn:nackademin:group2:telemetry"
-           )
+            namespace = await client.get_namespace_index(
+                "urn:nackademin:group2:telemetry"
+            )
 
-           nodes = {
-               name: client.get_node(ua.NodeId(node_id, namespace))
-               for name, node_id in NODES.items()
-           }
-
+            nodes = {
+                name: client.get_node(ua.NodeId(node_id, namespace))
+                for name, node_id in NODES.items()
+            }
             # --------------------------------------------------
             # 3. READ INITIAL VALUES
             # --------------------------------------------------
