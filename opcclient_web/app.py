@@ -9,7 +9,7 @@ import threading
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify
-from asyncua import Client
+from asyncua import Client, ua
 
 
 # --------------------------------------------------
@@ -32,20 +32,18 @@ app = Flask(__name__)
 # --------------------------------------------------
 
 SERVER_URLS = {
-    "server1": "opc.tcp://SERVER1:4840",
-    "server2": "opc.tcp://SERVER2:4840",
-    "server3": "opc.tcp://SERVER3:4840",
-    "server4": "opc.tcp://SERVER4:4840",
-    "server5": "opc.tcp://SERVER5:4840",
-    "server6": "opc.tcp://SERVER6:4840",
+    "alexander": "opc.tcp://192.168.1.109:4840/telemetry/",
+    "fredrik": "opc.tcp://192.168.1.73:4840/telemetry/",
+    "queenie": "opc.tcp://172.20.10.3:4840/",
+    "mattias": "opc.tcp://100.67.67.79:4840/telemetry-server",
 }
 
 
 # Local name: actual OPC UA NodeId
 NODES = {
-    "DeviceId": "ns=2;s=Device.DeviceId",
-    "Temperature": "ns=2;s=Device.Value",
-    "Humidity": "ns=2;s=Device.Unit",
+    "DeviceId": "Device.DeviceId",
+    "Temperature": "Device.Temperature",
+    "Humidity": "Device.Humidity",
 }
 
 
@@ -217,12 +215,14 @@ async def read_server(server_name, server_url):
         # because the connection is temporarily interrupted.
 
         try:
+            namespace = await client.get_namespace_index(
+                "urn:nackademin:group2:telemetry"
+            )
 
             nodes = {
-                name: client.get_node(node_id)
+                name: client.get_node(ua.NodeId(node_id, namespace))
                 for name, node_id in NODES.items()
             }
-
             # --------------------------------------------------
             # 3. READ INITIAL VALUES
             # --------------------------------------------------
