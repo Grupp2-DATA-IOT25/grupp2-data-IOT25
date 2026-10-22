@@ -94,3 +94,90 @@ def build_rows(entries, states, last_reads):
         status = "online" if connected else ("connecting" if data is None else "offline")
 
         for field, unit in (("Temperature", "C"), ("Humidity", "%")):
+            rows.append({
+                "device_id": data.get("DeviceId", entry["device_id"]) if connected else entry["device_id"],
+                "measurement": field,
+                "value": data.get(field) if connected else None,
+                "unit": unit,
+                "updated_at": timestamp,
+                "status": status,
+                "is_stale": False,
+            })
+    return rows
+
+
+def screen_text(entries, states, last_reads):
+    rows = build_rows(entries, states, last_reads)
+    connected = sum(
+        entry["name"] in states and "error" not in states[entry["name"]]
+        for entry in entries
+    )
+    parts = [
+        "GRUPPENS OPC UA-TELEMETRI",
+        f"Servrar: {len(entries)} | Anslutna: {connected}",
+        "",
+        render(rows),
+        "",
+        "LATEST UPDATE = senaste lyckade läsning observerad av klienten.",
+        "STATUS visar OPC UA-anslutningen, inte sensorvärdets ålder.",
+        "Avsluta med Ctrl + C.",
+    ]
+    for entry in entries:
+        data = states.get(entry["name"], {})
+        if "error" in data:
+            error = " ".join(str(data["error"]).split())
+            parts.append(f"{entry['name']}: {error}")
+    return "\n".join(parts)
+
+
+async def run(entries, interval=2.0):
+    from opcua_watch import watch
+
+    states = {}
+    last_reads = {}
+    tasks = [
+        asyncio.create_task(watch(entry, states, interval))
+        for entry in entries
+    ]
+    try:
+        while True:
+            text = screen_text(entries, states, last_reads)
+            if sys.stdout.isatty():
+                print("\033[2J\033[H", end="")
+            print(text, flush=True)
+            await asyncio.sleep(interval)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Gruppens OPC UA-konsolklient")
+    parser.add_argument(
+        "--servers", default=str(Path(__file__).with_name("servers.json"))
+    )
+    parser.add_argument("--interval", type=float, default=2.0)
+    args = parser.parse_args()
+    if not math.isfinite(args.interval) or args.interval <= 0:
+        parser.error("--interval måste vara ett positivt, ändligt tal")
+    try:
+        entries = load_servers(args.servers)
+    except ConfigError as error:
+        parser.error(str(error))
+    try:
+        asyncio.run(run(entries, args.interval))
+    except ModuleNotFoundError as error:
+        print(f"Paket eller fil saknas: {error.name}", file=sys.stderr)
+        print(
+            "Installera requirements.txt och kontrollera att opcua_watch.py "
+            "och schema.py finns i samma mapp som main.py.", file=sys.stderr
+        )
+        return 1
+    except KeyboardInterrupt:
+        print("\nKonsolklienten stoppad.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
