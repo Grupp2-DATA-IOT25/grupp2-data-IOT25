@@ -32,12 +32,10 @@ app = Flask(__name__)
 # --------------------------------------------------
 
 SERVER_URLS = {
-    "server1": "opc.tcp://SERVER1:4840",
-    "server2": "opc.tcp://SERVER2:4840",
-    "server3": "opc.tcp://SERVER3:4840",
-    "server4": "opc.tcp://SERVER4:4840",
-    "server5": "opc.tcp://SERVER5:4840",
-    "server6": "opc.tcp://SERVER6:4840",
+    "alexander": "opc.tcp://192.168.1.109:4840/telemetry/",
+    "fredrik": "opc.tcp://192.168.1.73:4840/telemetry/",
+    "queenie": "opc.tcp://172.20.10.3:4840/",
+    "mattias": "opc.tcp://100.67.67.79:4840/telemetry-server",
 }
 
 
